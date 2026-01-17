@@ -1,0 +1,783 @@
+---
+title: "Projet RDSM - Analyses Multidimensionnelles pour la pollution à Périgueux"
+author: "Dorian FERNANDEZ & Vianney MATHON"
+date: "17 décembre 2025"
+output:
+  html_document:
+    toc: true
+    toc_float: 
+      collapsed: false
+      smooth_scroll: true
+    number_sections: false
+    theme: flatly
+    highlight: tango
+    css: styles.css
+---
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,700;1,400&family=Montserrat:wght@400;700&display=swap');
+
+body {
+    background-color: #f4f6f7;
+    font-family: 'Lora', serif;
+    font-size: 16px;
+    color: #333333;
+    line-height: 1.7;
+}
+
+.main-container {
+    max-width: 1400px !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    padding-left: 50px !important;
+    padding-right: 20px !important;
+}
+
+div.row {
+    display: flex;
+    flex-direction: row-reverse; 
+}
+
+div.col-md-9 {
+    background-color: #ffffff;
+    padding: 50px;
+    border: 1px solid #e1e4e8;
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.03);
+    margin-right: 30px;
+}
+
+#TOC {
+    margin-top: 0px;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 13px;
+    border: 1px solid #e1e4e8;
+    background: #ffffff;
+    border-radius: 8px;
+    padding: 15px;
+    width: 300px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.02);
+}
+
+.toc-content {
+    padding-left: 0;
+}
+
+.list-group-item.active {
+    background-color: #007bff !important;
+    border-color: #007bff !important;
+    font-weight: bold;
+}
+.list-group-item {
+    padding: 8px 10px;
+}
+
+#header {
+    text-align: center;
+    border-bottom: 2px solid #ecf0f1;
+    padding-bottom: 30px;
+    margin-bottom: 40px;
+    width: 100%;
+}
+
+h1.title {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 700;
+    font-size: 2.5em;
+    color: #007bff;
+}
+
+h4.author, h4.date {
+    font-family: 'Montserrat', sans-serif;
+    color: #7f8c8d;
+    margin-top: 10px;
+    font-size: 1.1em;
+}
+
+h1, h2, h3 {
+    font-family: 'Montserrat', sans-serif;
+    color: #2c3e50;
+    font-weight: 700;
+    margin-top: 40px;
+}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, fig.align = "center")
+library(tidyr) 
+library(dplyr) 
+library(ggplot2) 
+library(lubridate) 
+library(plotly)    
+library(MASS) 
+library(FactoMineR)
+library(factoextra)
+library(corrplot)
+library(naniar)
+```
+
+# 0 - Présentation des données
+
+Premièrement, on commence par charger le jeu de données et préparer les variables temporelles nécessaires aux analyses (format date, mois, et centrage de l'heure sur 14h).
+
+```{r}
+df <- load("ATMO-RDSM2.rda")
+atmo$date <- as.Date(atmo$date_debut)
+atmo$mois <- as.factor(month(atmo$date))
+atmo$heure2 <- abs(atmo$heure - 14)
+```
+
+> **Structure du jeu de données**
+
+Le jeu de donnée couvre une période d'un an, allant du 8 novembre 2023 au 31 octobre 2024. Le relevé est basé sur les heures.  
+Au total, on dispose de **18 variables**, dont :  
+  &nbsp;&nbsp;&nbsp;&nbsp; - 2 Variables qualitatives pour l'analyse temporelle : *jour* et *mois*  
+  &nbsp;&nbsp;&nbsp;&nbsp; - 16 Variables quantitatives, réparties en trois groupes :   
+  &nbsp;&nbsp;&nbsp;&nbsp; &nbsp;&nbsp;&nbsp;&nbsp; • Polluants : *NO*, *NO2*, *O3*, *PM10*    
+  &nbsp;&nbsp;&nbsp;&nbsp; &nbsp;&nbsp;&nbsp;&nbsp; • Météo : *temperature*, *humidité*, *pression*, *pression_variation_3h*, *point de rosée*, *vent moyen*, *pluie_6h* et *pluie_24h*  
+  &nbsp;&nbsp;&nbsp;&nbsp; &nbsp;&nbsp;&nbsp;&nbsp; • Temps : *heure* et *heure2*  
+  
+Voici un résumé complet de nos variables :
+
+```{r}
+summary(atmo)
+```
+
+> **Analyse du jeu de donnée**
+
+&nbsp;&nbsp;&nbsp;&nbsp; - Météo : La température varie de -4.5°C (minimum) à 38.3°C (maximum), avec une moyenne de 13.4°C. L'humidité est globalement élevée (moyenne de 81%).  
+&nbsp;&nbsp;&nbsp;&nbsp; - Pollution : L'Ozone (O3) varie de 0 à 120, avec une moyenne autour de 50. On observe néanmoins des valeurs minimales légèrement négatives pour le NO et NO2 (-2.8 et -3.0).  
+&nbsp;&nbsp;&nbsp;&nbsp; - Répartition : Les données sont bien réparties sur tous les jours de la semaine (environ 1100 observations par jour).  
+   
+# I - 1^ère^ Analyse
+
+## 1 - Matrice de corrélation
+> Construire la matrice de corrélation des variables quantitatives, analyser globalement.
+
+```{r corr_1, fig.height=7, fig.width=7}
+atmo_quanti <- dplyr::select(atmo, where(is.numeric))
+M <- cor(atmo_quanti, use = "complete.obs")
+corrplot(M, method = "number", number.cex = 0.7)
+```
+
+```{r corr_2, fig.height=7, fig.width=7}
+corrplot(M, method = "circle")
+```
+
+**Analyse :**
+
+On observe une forte corrélation positive entre les variables NO, NO2 (0,88) et à moindre mesure entre PM10, NO (0,53) et PM10, NO2 (0,49). Cette observation prend sens dans la mesure où les sources d'émission de ces variables sont identiques : trafic routier, chauffage résidentiel.
+
+A l'inverse, l'ozone est corrélée négativement avec ces trois variables mais principalement avec NO et NO2 (-0.5). Là encore, c'est une relation non sureprenante : les polluants d'azote consomment l'ozone. Lorsque le trafic est important, l'ozone tend à diminuer, "consommé" par l'azote.
+
+De plus, l'ozone affiche une corrélation notable avec ce couple :  
+Température (+0,47) : plus il fait chaud, plus l'ozone est produit.  
+Humidité (-0,61) : plus l'air est humide, moins il y a d'ozone.  
+Ces derniers agissent également sur les variables NO, NO2 mais de manière moins importante. A noter que les corrélations entre (NO, NO2) et (température, humidité) sont négatives quand les corrélations entre O3 et (température, humidité) sont positives et inversement.
+
+Enfin, d'autres corrélations sont observables :  
+(Humidité, tempréature), (point de rosée, température), ... mais moins pertinentes pour notre analyse.
+
+
+## 2 - Matrice de corrélation (calculée à midi)
+> **Création de la matrice de corrélation, calculée à midi**
+
+```{r}
+atmo_midi <- dplyr::filter(atmo, heure == 12)
+atmo_midi_quanti <- dplyr::select(atmo_midi, where(is.numeric))
+atmo_midi_quanti <- dplyr::select(atmo_midi_quanti, -heure, -heure2)
+M_midi <- cor(atmo_midi_quanti, use = "complete.obs")
+```
+
+```{r corr_3, fig.height=7, fig.width=7}
+corrplot(M_midi, method = "number", number.cex = 0.7)
+```
+
+```{r corr_4, fig.height=7, fig.width=7}
+corrplot(M_midi, method = "circle")
+```
+
+**Comparaison avec les résultats précédents :**
+
+Les liens entre polluants se sont accentuées :  
+  (NO, NO2) passe de 0.88 à 0.94.  
+  (NO, O3) passe de -0,54 à -0,64.  
+  (NO2, 03) passe de -0,50 à -0,58.
+
+Sauf pour la variable PM10 qui s'est décorrélée des autres polluants (du au brassage de l'air).
+
+Concernant les liens entre polluants et tempréature/humidité, on observe également une accentuation :  
+  (NO,NO2) et température passent d'environ -0,36 à -0,50.  
+  (NO, NO2) et humidité passent environ de 0,27 à 0,43.  
+  O3 et (tempréature, humidité) restent stables.
+  
+A midi, le soleil brille intensément, les températures sont hautes, cela favorise l'effet de destruction de l'ozone par l'azote rejeté par le trafic routier étant élevé à la mi-journée, ce qui explique l'intensification des liens entre polluants et (température, humidité).
+
+## 3 - Variables liées à l'Ozone
+> **Tests de corrélation sur l'ozone et les différents paramètres**
+
+On s'intéresse aux variables quantitatives liées à l'ozone. Pour simplifier la lecture, on affiche directement par ordre décroissant la liste des corrélations impliquant l'ozone.
+
+```{r}
+liens_ozone <- cor(atmo_quanti, use = "complete.obs")[, "O3"]
+sort(liens_ozone, decreasing = TRUE)
+```
+En se basant sur les coefficients de corrélation de Pearson, on peut tirer quelques conclusions :
+
+&nbsp;&nbsp;&nbsp;&nbsp; - **Corrélations positives** : La variable la plus corrélée à l'ozone est la *température* (0.47), suivie du *vent_moyen* (0.44).  
+&nbsp;&nbsp;&nbsp;&nbsp; - **Corrélations négatives** : Les variables les plus corrélées négativement sont l'*humidité* (-0.61) et *NO* (-0.54) et *NO2* (-0.50), comme décris précédemment.
+
+
+### 3.1 - Corrélations positives
+> **Quelques graphiques**
+
+```{r}
+plot(atmo$temperature, atmo$O3, 
+     main = "Ozone vs Température",
+     xlab = "Température (°C)", ylab = "Ozone (µg/m3)",
+     pch = 19, col = rgb(0.2, 0.4, 0.8, 0.3), frame = FALSE)
+abline(lm(O3 ~ temperature, data = atmo), col = "red", lwd = 2)
+```
+
+**Interprétations :**
+
+Ce nuage confirme graphiquement le lien observé entre ozone et température. Plus la température augmente, plus la concentration maximale d'ozone tend à s'élever. C'est l'effet amplificateur de la chaleur qui pousse d'autres polluants tels que le monoxyde d'azote et le dioxyde d'azote à consommer l'ozone. On observe toutefois une dispersion qui met en lumière l'influence d'autres variables sur la concentration d'ozone.
+
+
+
+```{r}
+vent_groupe <- cut(atmo$vent_moyen, breaks = 3, labels = c("Faible", "Moyen", "Fort"))
+boxplot(atmo$O3 ~ vent_groupe, 
+        main = "Ozone selon la force du vent",
+        xlab = "Vent", ylab = "Ozone (µg/m3)",
+        col = "lightblue")
+```
+
+**Interprétations :**
+
+On remarque que plus le vent est fort, plus la concentration sera élevée en moyenne et sa dispersion faible. Cela provient du fait que le vent fort évacue les polluants qui détruisent l'ozone, ce qui permet à cette dernière de s'accumuler dans l'atmosphère.
+
+### 3.2 - Corrélations négatives
+```{r}
+plot(atmo$humidite, atmo$O3, 
+     main = "Ozone vs Humidité",
+     xlab = "Humidité (%)", ylab = "Ozone (µg/m3)",
+     pch = 19, col = rgb(0.8, 0.2, 0.2, 0.3), frame = FALSE)
+lines(lowess(atmo$humidite, atmo$O3), col = "blue", lwd = 2)
+```
+
+**Interprétations :**
+
+Le graphique montre une courbe clairement descendante : plus l'humidité augmente, plus l'ozone diminue.  
+C'est logique : une forte humidité signifie souvent que le ciel est couvert ou qu'il pleut. Or, l'ozone a besoin des rayons du soleil pour se former. Quand il fait gris et humide, le soleil est caché, donc la "fabrique à ozone" s'arrête. À l'inverse, les pics d'ozone arrivent toujours par temps sec et ensoleillé.
+
+```{r}
+plot(atmo$NO, atmo$O3, 
+     main = "Ozone vs NO",
+     xlab = "NO (µg/m3)", ylab = "Ozone (µg/m3)",
+     pch = 19, col = rgb(0.8, 0.2, 0.2, 0.3), frame = FALSE)
+lines(lowess(atmo$NO, atmo$O3), col = "blue", lwd = 2)
+
+plot(atmo$NO2, atmo$O3, 
+     main = "Ozone vs NO2",
+     xlab = "NO2 (µg/m3)", ylab = "Ozone (µg/m3)",
+     pch = 19, col = rgb(0.8, 0.2, 0.2, 0.3), frame = FALSE)
+lines(lowess(atmo$NO2, atmo$O3), col = "blue", lwd = 2)
+```
+
+**Interprétations :**
+
+Le graphique montre une chute brutale de l'ozone dès que la concentration de NO et NO2 augmentent.
+
+C'est l'illustration parfaite du phénomène de destruction : le NO et NO2 sont des gaz émis directement par les voitures. Dès qu'il est présent dans l'air, il réagit avec l'ozone et le fait disparaitre.
+
+## 4 - Analyse en Composantes Principales
+
+### 4.1 - Création de l'ACP {#section-4-1}
+
+> **Pourquoi une ACP normée ?**
+
+Nous optons pour une ACP normée afin de gérer l'hétérogénéité des unités (pression, température, polluants). Cette normalisation neutralise les effets d'échelle, garantissant à chaque variable un poids identique pour baser l'analyse sur les corrélations plutôt que sur les amplitudes brutes.
+
+> **Sélection des variables utiles** 
+
+Premièrement, on ne sélection que les variables qui nous intéressent, en supprimant *date_debut*, *jour*,*mois*, *heure*, *heure2* et *date*
+
+```{r}
+atmo_active <- atmo[, -c(1:5, ncol(atmo))]
+atmo_active
+```
+
+
+```{r}
+res.pca <- PCA(atmo_active, scale.unit = TRUE, graph = FALSE)
+res.pca$eig
+```
+
+On retrouve bien les résultats d’une ACP normée (somme des valeurs propres = p = 12)
+
+```{r}
+fviz_eig(res.pca, choice = "eigenvalue", addlabels=TRUE, 
+         main = "Pourcentage de variance expliquée par dimension")
+```
+
+```{r}
+fviz_pca_var(res.pca, axes=c(1,2))
+```
+
+```{r}
+fviz_cos2(res.pca, choice="var", axes = c(1,2))
+```
+
+> **Analyse détaillée de l'ACP normée**
+
+Le cercle des corrélations (31,3% sur l’axe 1 et 17.4% sur l’axe2) montrent des phénomènes bien anticipés par l’analyse de la matrice des corrélations :
+
+&nbsp;&nbsp;&nbsp;&nbsp; - **L'AXE 1** (Composante Principale n°1) :  
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; • Les variables liées aux conditions estivales et de formatiopn d'ozone (*température*, *O3*, *vent_moyen*) sont positivement corrélées entre elles et fortement projetées du côté négatif de l'axe (vers la gauche).  
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; • À l'opposé, sur la partie positive de l'axe (vers la droite), on retrouve les variables associées aux conditions de stabilité ou hivernales (*humidité*, *NO*, *NO2*).
+
+**Interprétation :** Un individu (une heure de la journée relevée) situé à gauche du graphique correspondra à un moment chaud, venteux et chargé en ozone (en été par exemple). À l'inverse, un point situé à droite signalera un moment humide, froid et remplie de NO/NO2 (durant la nuit ou en hiver).
+
+&nbsp;&nbsp;&nbsp;&nbsp; - **L'AXE 2** (Composante Principale n°2) :  
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; • Indépendamment du cycle "O3 et NO/NO2", la variable *pression* et les *PM10* se projettent fortement sur le second axe.  
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; • Ainsi, les variations de pression atmosphérique constituent une information distincte, non corrélée à la température.
+
+**Interprétation :** Un individu (une heure de la journée relevée) situé en bas du graphique correspondra à une situation d'anticyclone (hautes pressions), caractérisée par un air stable qui plaque les polluants au sol et favorise l'accumulation des particules fines. À l'inverse, un point situé en haut du graphique signalera une situation de dépression (basses pressions), propice au brassage de l'air et à la dispersion des polluants.
+
+Finalement en peux conclure en identifiant les deux axes comme :  
+&nbsp;&nbsp;&nbsp;&nbsp; - **AXE 1 : ** Cycle dit "photochimique" (Gauche = Ozone/Chaud vs Droite = NO et NO2/Humide)  
+&nbsp;&nbsp;&nbsp;&nbsp; - **AXE 2 : ** Stabilité barométrique (Pression/Particules).
+
+```{r}
+fviz_pca_ind(res.pca,axes = c(1,2),geom = "point", col.ind = "black", alpha.ind = 0.5, title = "Nuage des Individus (Plan 1-2)")
+```
+
+### 4.2 - Identification des individus précis
+
+```{r}
+coords <- as.data.frame(res.pca$ind$coord)
+indices <- which(coords$Dim.1 < -3 & coords$Dim.2 < -3)
+cat("Nombre d'heures identifiées :", length(indices), "\n")
+
+moments_cles <- atmo[indices, c("date_debut", "heure", "temperature", "O3")]
+print(moments_cles)
+```
+
+Ici, on peut observer **7 relevés d'heures** différentes qui ont des coordonnées sur le plan, avec en abscisses (<-3) et en ordonnées (<-3). Ces heures ont été capturés lors de grosse période de chaleur, en pleine après-midi en été.
+
+Pour trouver ce qui caractérisent ces moments, nous pouvons effectuer des test statistiques en :  
+&nbsp;&nbsp;&nbsp;&nbsp; - Comparant la moyenne des variables pour ce sous-groupe par rapport à la moyenne globale de l'année, afin de comprendre en quoi ils sont différents
+
+> **Écart à la moyenne**
+
+```{r}
+vars <- c("temperature", "O3", "pression", "PM10")
+moy_groupe <- colMeans(atmo[indices, vars], na.rm = TRUE)
+moy_global <- colMeans(atmo[, vars], na.rm = TRUE)
+
+comparatif <- data.frame(
+  Groupe_Extreme = round(moy_groupe, 2),
+  Moyenne_Annuelle = round(moy_global, 2),
+  Ecart = round(moy_groupe - moy_global, 2)
+)
+print(comparatif)
+```
+
+L'analyse de l'écart à la moyenne nous permet de caractériser précisément ces 7 moments identifiés. Statistiquement, ils se distinguent du reste de l'année par des faits marquants positifs :   
+&nbsp;&nbsp;&nbsp;&nbsp; - Une **température excessive**  
+&nbsp;&nbsp;&nbsp;&nbsp; - Une **concentration d'O3 très élevée**  
+&nbsp;&nbsp;&nbsp;&nbsp; - Une **pression atmosphérique supérieure à la moyenne**  
+
+Ainsi, on peut conclure en disant que la zone en bas a gauche (<-3 horizontalement et verticalement) correspond aux épisodes de canicules, ajouté à des épisodes anticyclonique, où la pollution à l'ozone est maximale (aggravé par un bon nombre de particules PM10).
+
+
+## 5 - Les données observées à 12h
+> **Identification des axes**
+
+```{r}
+atmo_midi <- subset(atmo, heure == 12)
+
+vars_actives_midi <- atmo_midi[, -c(1:5, ncol(atmo_midi))]
+res.pca.midi <- PCA(vars_actives_midi, scale.unit = TRUE, graph = FALSE)
+
+atmo_midi$mois <- factor(atmo_midi$mois, 
+                         levels = 1:12, 
+                         labels = c("Janvier", "Février", "Mars", "Avril", "Mai", "Juin", 
+                                    "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"))
+
+fviz_pca_ind(res.pca.midi,
+             geom = "point",
+             pointshape = 16,
+             col.ind = atmo_midi$mois,
+             palette = "rainbow",
+             legend.title = "Mois",
+             title = "Projection des individus à Midi")
+```
+
+**Interprétations :**
+
+&nbsp;&nbsp;&nbsp;&nbsp; - **L'AXE 1** : La saisonnalité (Été -> Hiver) :
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; • À gauche (coordonnées négatives) : Les mois d'été (Juin, Juillet, Août) sont regroupés. Ces mois sont caractérisés par des températures élevées et une forte production d'O3.  
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; • À droite (coordonnées positives) : Les mois d'hiver (Janvier, Février, Décembre) sont rassemblés. Ils correspondent aux périodes froides, humides et plus riches en NO.  
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; • Au centre : Les mois de transition (Printemps, Automne) qui font les transitions.
+
+&nbsp;&nbsp;&nbsp;&nbsp; - **L'AXE 2** : La variabilité météorologique, qui dépend des cycles entre anticyclone et dépression.
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; • En haut (coordonées positives) : Ici, il y a beaucoup de vent (et de la pluie), on a donc une météo agitée qui laisse place à de basse préssions, le vent chasse les polluants.  
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; • En bas (coordonnées négatives) : Ici, il y a très peu de vent, il fait très beau ou gris, l'air est lourd et immobile (hautes pressions), ainsi les polluants et les particules restent bloqués au sol.
+
+## 6 - Les données observées à 18h
+> **Identification des axes**
+
+```{r}
+atmo_18h <- subset(atmo, heure == 18)
+vars_actives_18h <- atmo_18h[, -c(1:5, ncol(atmo_18h))]
+
+res.pca.18h <- PCA(vars_actives_18h, scale.unit = TRUE, graph = FALSE)
+
+atmo_18h$mois <- factor(atmo_18h$mois, 
+                        levels = 1:12, 
+                        labels = c("Janvier", "Février", "Mars", "Avril", "Mai", "Juin", 
+                                   "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"))
+
+fviz_pca_ind(res.pca.18h,
+             geom = "point",
+             pointshape = 16,
+             col.ind = atmo_18h$mois,
+             palette = "rainbow",
+             legend.title = "Mois",
+             title = "Projection des individus à 18h ")
+```
+
+**Interprétations :**
+
+&nbsp;&nbsp;&nbsp;&nbsp; - **L'AXE 1** : La saisonnalité (Été -> Hiver) couplée au cycle Jour/Nuit (opposition plus marquée) :
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; • À gauche (coordonnées négatives) : Les mois d'été (Juin, Juillet, Août) sont regroupés. À 18h, il fait encore jour, ainsi les températures restent élevées et la production d'O3 est encore active.  
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; • À droite (coordonnées positives) : Les mois d'hiver (Décembre, Janvier, Février) sont rassemblés. À 18h, il fait déjà nuit, ainsi cela correspond à des périodes froides caractérisées par un pic de pollution NO et NO2, dû au chauffage et au trafic.  
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; • Au centre : Les mois de transition (Printemps, Automne) qui assurent le passage entre les deux extrêmes.
+
+&nbsp;&nbsp;&nbsp;&nbsp; - **L'AXE 2** : La variabilité météorologique, même axe que l'ACP calculée à midi.
+
+## 7 - Comparaison des ACP (12h vs 18h)
+> **Les similarités**
+
+&nbsp;&nbsp;&nbsp;&nbsp; - L'axe 2 reste inchangée entre 12h et 18h :  
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; • Nature de l'axe : Dans les deux cas, cet axe représente la variabilité météorologique, qui dépend de la pression (anticyclone/dépression)  
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; • Que ce soit à midi ou le soir, les particules fines restent corrélées à la pression. L'axe 2 est donc l'axe de la dispersion ou de l'accumulation, qui agit indépendamment de l'heure.
+ 
+> **Les différences**
+
+&nbsp;&nbsp;&nbsp;&nbsp; - C'est sur l'axe 1 que la différence est marquée (l'interprétation générale est grossièremment la même) :  
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; • À Midi, on compare un jour d'été et d'hiver dans lesquels il fait jour, en effet même si on est en hiver, il y a de la lumière, qui est propice à la création d'O3, et les émissions de chauffage/traffic sont basses à ces heures là.  
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; • À 18h, la différence notable est qu'il fait jour en été et nuit, en hiver. Ainsi, l'absence de lumière et la surabondance de chauffage/traffic fait en sorte que le NO et NO2 sont très haut, ainsi les mois d'hiver sont envoyés a l'extrémité droite, plus qu'a midi.  
+
+> **Conclusion**
+
+Le graphique de 18h est donc plus intéressant car il superpose deux effets : il oppose l'été à l'hiver, mais aussi le jour (en été) à la nuit (en hiver). Ce contraste projette les mois d'hiver et d'été aux extrêmes de l'axe 1, qui rend l'analyse très intéressante.
+
+# II - 2^nd^ Analyse
+
+## 1 - ACP sur moyennes journalières (météo en supplémentaires)
+```{r}
+atmo <- atmo %>%  mutate(date = as.Date(date_debut))
+atmo2  <- atmo %>% group_by(date) %>%
+  summarise(across(where(is.numeric), mean, na.rm = TRUE)) %>% ungroup() %>% dplyr::select(!c(heure,heure2))
+atmo2$mois <- as.factor(month(atmo2$date))
+atmo2$jour <- wday(atmo2$date,label=TRUE,abbr=FALSE)
+
+atmo2
+```
+
+> **Création de l'ACP**
+
+```{r}
+vars_pol <- atmo2[, 2:5]
+vars_meteo <- atmo2[, 6:13]
+data_pca <- data.frame(vars_pol, vars_meteo)
+
+
+res.pca.jour <- PCA(data_pca, quanti.sup = 5:12, scale.unit = TRUE, graph = FALSE)
+fviz_pca_var(res.pca.jour,col.var = "black",col.quanti.sup = "red", repel = TRUE, title = "Cercle des corrélations (Pollution Active / Météo Supp.)")
+```
+
+**Interprétations :**
+
+L’ACP réalisée sur les moyennes journalières relèvent premiers axes résumant à eux seuls **87 % de la variation** de la qualité de l'air.
+
+**L'Axe 1 (71 %) : L'équilibre entre trafic et ozone**  
+C'est l'axe majeur de l'analyse. Il oppose radicalement deux types de pollution :
+**Le pôle urbain (à droite) :** On y trouve le *NO* et le *NO2* (légèrement sous l'horizontale). Ils représentent les émissions directes du trafic routier et du chauffage.
+**Le pôle ozone (à gauche) :** L'**ozone** se projette à l'opposé. 
+
+**Interprétation :** Cette opposition illustre la destruction chimique de l'ozone par les gaz d'échappement. À l'échelle d'une journée, plus la ville produit de NO, plus l'ozone est "consommé" et disparaît. Ce score très élevé (71 %) montre que cet équilibre dicte l'essentiel de la qualité de l'air à Périgueux.
+
+
+
+**L'Axe 2 (16 %) : La spécificité des Particules (PM10)**  
+Cet axe vertical apporte une nuance importante. Alors que les gaz (*NO*, *NO2*) restent proches de la ligne horizontale, le vecteur PM10 s'élève nettement vers le haut.
+
+**Interprétation :** Cela signifie que les particules fines ne suivent pas exactement la même logique que les gaz d'échappement. Elles représentent des épisodes de stagnation où les poussières s'accumulent indépendamment du reste, souvent lors de conditions météo très stables ou d'apports extérieurs.
+
+**L'apport des variables météo**  
+L'ajout des variables météo en "supplémentaires" confirme physiquement cette géographie :   
+**Vent et température :** Pointent vers la gauche (avec l'ozone). Le vent évacue les polluants de ville et la chaleur favorise la présence d'ozone.  
+**Pression et humidité :** Pointent vers la droite et le haut (avec les *NO* et *PM10*). Elles caractérisent les journées lourdes et sans vent qui "plaquent" les polluants et les poussières au sol.
+
+**Conclusion :** La pollution à Périgueux est très prévisible. Elle se résume à une balance entre l'**activité urbaine** (qui sature l'air en gaz et particules) et la **dispersion météo** (le vent et le soleil qui nettoient ou transforment cet air).
+
+## 2 - ACP sur moyennes journalières (pollution en supplémentaires)
+
+> **Création de l'ACP**
+
+```{r}
+data_pca_meteo <- data.frame(vars_meteo, vars_pol)
+res.pca.meteo <- PCA(data_pca_meteo, quanti.sup = 9:12, scale.unit = TRUE, graph = FALSE)
+fviz_pca_var(res.pca.meteo,col.var = "black",col.quanti.sup = "blue",repel = TRUE, title = "Cercle des corrélations (Météo Active / Pollution Supp.)")
+```
+
+**Interprétations :**
+ 
+Ce cercle des corrélations est construit sur les variables météorologiques (flèches noires), avec les polluants projetés en variables supplémentaires (flèches bleues). Cela permet de lire directement l'influence du climat sur la qualité de l'air.
+
+**L'Axe 1 (29,5%) : Opposition Stagnation vs Dynamique :** Cet axe explique la plus grande part de variance. Il oppose les conditions de blocage aux conditions de mouvement.
+
+&nbsp;&nbsp;&nbsp;&nbsp; - **À Gauche (Stagnation) :** On retrouve la *pression*, associée au bloc des polluants primaires (NO, NO2, PM10).  
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; • *Analyse :* Les hautes pressions agissent comme un couvercle (stabilité atmosphérique). L'absence de mouvement d'air empêche la dispersion et favorise l'accumulation locale des polluants issus du trafic et du chauffage.
+
+&nbsp;&nbsp;&nbsp;&nbsp; - **À Droite (Dynamique)** : On retrouve le *vent*, la *pluie* et la *température*.  
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; • *Analyse :* C'est le côté mouvementé de l'atmosphère. Le vent et la pluie dispersent les polluants, tandis que la température active les réactions chimiques.
+
+**L'Axe 2 (27,7%) : Le Gradient Saisonnier :** Cet axe sépare les situations estivales des situations hivernales.
+
+&nbsp;&nbsp;&nbsp;&nbsp; - **En Haut (Estival) :**  La Température tire l'axe vers le haut, entrainant avec elle l'Ozone (O3).  
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; • *Analyse :* Il représente les journées chaudes. La corrélation entre Température et Ozone est directe : la chaleur et le rayonnement solaire sont les moteurs de la création de l'ozone
+
+&nbsp;&nbsp;&nbsp;&nbsp; - **En Bas (Hivernal) :** L'Humidité tire l'axe vers le bas.  
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; • *Analyse :* Il correspond aux journées froides, humides ou grises, qui sont défavorables à la création d'ozone mais propices au maintien des particules et des oxydes d'azote au sol.
+
+**Conclusion** : La pollution n'est pas aléatoire. Les polluants primaires (*NO*,*NO2*) et les particules (*PM10*) sont prisonniers de la pression (Gauche), tandis que le polluant secondaire (Ozone) est dépendant de la Température (Haut).
+
+# III - Analyse personnelle
+
+## 1 - Création de la problématique
+
+> **Contexte et problématique**
+
+Dans les analyses précédentes, nous avons démontré que la météorologie (vent, température, pression) joue un rôle majeur dans la dispersion ou l'accumulation des polluants. Cependant, la pollution est avant tout une conséquence de l'activité humaine (trafic routier, industrie), qui n'est pas constante dans le temps.
+
+Cette activité suit un rythme social hebdomadaire précis : dense du lundi au vendredi, et ralentie le week-end. (mettant en évidence les déplacements accrus en semaine pour le travail).  
+Pour cette analyse, nous allons donc traiter la probélamtique suivante :
+
+***"La baisse du trafic et de l'activité économique (le week-end) suffit-elle à améliorer globalement la qualité de l'air à Périgueux ? Observe-t-on un au contraire un "paradoxe chimique" où la baisse de certains polluants en favorise d'autres ?"***
+
+Pour répondre nous allons procéder de cette manière :  
+&nbsp;&nbsp;&nbsp;&nbsp; - 1 : **Analyses bivariées** pour comparer les niveaux moyens de polluants primaires (NO2) et secondaires (Ozone).  
+&nbsp;&nbsp;&nbsp;&nbsp; - 2 : **Projection sur l'ACP** (général) pour voir si le week-end constitue un "climat de pollution".   
+&nbsp;&nbsp;&nbsp;&nbsp; - 3 : **Projection sur l'ACP** (hiver seulement) pour voir si les mois froid (avec plus de chauffage) constituent un "climat de pollution".  
+&nbsp;&nbsp;&nbsp;&nbsp; - 4 : **Projection sur l'ACP** (basé sur les tranches horraires) de 7h à 9h et de 16h à 18h  
+&nbsp;&nbsp;&nbsp;&nbsp; - 5 : **Projection sur l'ACP** (basé sur les tranches horraires + hiver) Ici, on aura une précision imparable afin de voir si l'impact humain est important sur la pollution.
+
+```{r}
+atmo2 <- atmo2 %>%
+  mutate(
+    num_jour = wday(date, week_start = 1), # 1 = Lundi, 7 = Dimanche
+    type_jour = ifelse(num_jour >= 6, "Week-end", "Semaine"))
+
+atmo2$type_jour <- factor(atmo2$type_jour, levels = c("Semaine", "Week-end"))
+theme_set(theme_minimal())
+cols <- c("#00AFBB", "#FC4E07")
+```
+
+### 1.1 - Hypothèses et Interprétations
+
+***Hypothèse 1 :*** Le polluant NO est un polluant directement lié à l'activité humaine. Comme le trafic routier diminue fortement le samedi et le dimanche, on s'attend à une chute brutale des concentrations de NO le week-end.
+
+```{r}
+ggplot(atmo2, aes(x = type_jour, y = NO, fill = type_jour)) +
+  geom_boxplot(alpha = 0.8, outlier.colour = "grey", outlier.size = 1) +
+  scale_fill_manual(values = cols) +
+  coord_cartesian(ylim = c(0, quantile(atmo2$NO, 0.95, na.rm = TRUE))) +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "none",
+        plot.title = element_text(face = "bold", hjust = 0.5)) +
+  labs(title = "Niveaux de NO (Semaine vs Week-End)",
+       x = "", y = "Concentration (µg/m3)")
+```
+
+**Interprétations :** Le graphique confirme l'hypothèse. La médiane du NO est nettement plus basse le week-end. La boîte "Week-end" est vers le bas, ce qui signifie que les épisodes de forte pollution au NO sont quasi inexistants le samedi et le dimanche. Cela valide le fait que le NO est directement corrélé à l'activité humaine immédiate (trafic routier.)
+
+***Hypothèse 2 :*** Le NO2 est aussi lié au trafic, mais c'est un polluant qui reste plus longtemps dans l'atmosphère (il se forme à partir du NO). On s'attend donc à une baisse significative, mais peut-être moins radicale que pour le NO.
+
+```{r}
+ggplot(atmo2, aes(x = type_jour, y = NO2, fill = type_jour)) +
+  geom_boxplot(alpha = 0.8) +
+  scale_fill_manual(values = cols) +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "none",
+        plot.title = element_text(face = "bold", hjust = 0.5)) +
+  labs(title = "Niveaux de NO2 (Semaine vs Week-End)",
+       x = "", y = "Concentration (µg/m3)")
+```
+
+**Interprétations :** Ici encore, le graphique confirme notre hypothèse. Contrairement au NO, la différence entre la semaine et le week-end est moins prononcé mais bien présent. Ce qui change drastiquement est la médiane ainsi que la dispersion, qui est moindre le week-end.
+
+***Hypothèse 3 :*** C'est ici que réside la subtilité chimique. En ville, le NO (trafic) détruit l'Ozone.  
+Par conséquent, si le NO baisse le week-end (comme vu au graphique 1), il y a moins de "destructeur" d'Ozone. On s'attend donc, contre-intuitivement, à ce que l'Ozone augmente ou se maintienne à un niveau élevé le week-end.
+
+```{r}
+ggplot(atmo2, aes(x = type_jour, y = O3, fill = type_jour)) +
+  geom_boxplot(alpha = 0.8) +
+  scale_fill_manual(values = cols) +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "none",
+        plot.title = element_text(face = "bold", hjust = 0.5)) +
+  labs(title = "Niveaux d'Ozone (Semaine vs Week-End) ",
+       x = "", y = "Concentration (µg/m3)")
+```
+
+***Interprétation :*** Les résultats valident partiellement le "paradoxe de l'Ozone". Contrairement aux polluants primaires, l'Ozone ne baisse pas le week-end ; sa concentration médiane est équivalente mais légèrement inférieure à la semaine.Cependant, la baisse du trafic n'améliore donc pas significativement la situation pour l'O3, car la chimie atmosphérique compense la baisse des émissions.
+
+**Synthèse Globale de l'Analyse Bivariée**
+
+L'analyse comparée des trois polluants met en évidence un changement entre la semaine et le week-end.
+
+On observe d'abord un effet **Interrupteur**, où l'arrêt de l'activité économique le week-end coupe drastiquement les émissions de NO. Ensuite, un effet **Suiveur** se manifestant par la baisse du NO2, retirant alors à l'air les polluants irritants classiques. Enfin, un effet **Rebond** est visible sur l'Ozone qui profite de cette baisse du trafic pour s'accumuler, n'étant plus consommé par les gaz d'échappement frais.
+
+**Conclusion partielle :** Un air sans voiture n'est pas forcément un air sans pollution (à cause de l'Ozone), mais c'est un air débarrassé des polluants primaires toxiques.
+
+## 2 - Création de l'ACP globale (semaine VS week-end)
+
+> **Création de l'ACP**
+
+Pour cette analyse multivariée, nous conservons la structure de l'ACP journalière établie dans la [section 4.1](#section-4-1). Nous projetons simplement les individus sur ce plan factoriel existant en les colorant selon la variable Week-end, afin de vérifier si les jours de repos occupent une zone spécifique de l'espace pollution.
+
+
+```{r}
+fviz_pca_var(res.pca.jour,
+             col.var = "black",
+             repel = TRUE,
+             title = "Rappel : Définition des Axes (polluants & météo")
+```
+
+Pour plus de clareté, dans les sections suivantes nous allons utiliser des ellipses de confiance, qui résument graphiquemet les nuages de points, rendant la lecture plus simple malgré les nombreuses observations. De plus, elles permettent de comparer les deux groupes "semaine" et "week-end" que l'on va tester. Enfin la taille pourra en dire beaucoup sur la variance des groupes (plus elle est grande, plus la variance est grande.)
+
+De plus, les graphes suivants permettent d'expliquer l'impact humain sur les polluants. En effet, statistiquement, les conditions météo sont les mêmes le week-end et la semaine. Si l'activité humaine n'avait aucun impact, les deux ellipses (Bleue et Orange) seraient parfaitement superposées. Or, on pourra observer que ce n'est pas forcément le cas.
+
+### 2.1 - Projection sur l'ACP (Influence du week-end)
+
+```{r}
+fviz_pca_ind(res.pca.jour, geom = "point", pointshape = 16, alpha.ind = 0.6, col.ind = atmo2$type_jour,addEllipses = TRUE, palette = c("#00AFBB", "#FC4E07"), legend.title = "Type de jour", title = "Influence du Week-end sur la structure globale de la pollution")
+```
+
+> **Interprétation :**
+
+Ici, les résultats sont assez visbibles, en effet on voit un décalage vers la gauche de l'ellipse correspondant aux jours du week-end. En effet, ce glissement vers la gauche le long de l'axe 1 (l'opposition *O3* (gauche) vs *NO * et *NO2* (droite)) prouve que l'air du week-end est moins chargé en *NO* et *NO2*, laissant place à la création d'*O3*. C'est la preuve directe que la baisse du trafic détend globalement l'atmosphère de la ville.
+
+De plus, on remarque sur ce graphe que les variables abbérantes pour les polluants *NO* et *NO2* sont bien plus présente en semaine que les week-end (6 observations la semaine VS 2 le week-end). Cela nous conforte dans l'idée que le traffic routier et donc l'impact humain à un grand impact sur la pollution de l'air, indépendamment des biais météorologique, comme le vent, la pression (qu'on suppose aléatoire et donc identique entre la semaine et le week-end).
+
+> **Question :**
+
+On pourrai alors maintenant se demander si l'impact humain est encore plus important en hiver, alliant trafic et chauffage abondant.
+
+### 2.2 - Projection sur l'ACP (Week-end + Hiver)
+
+```{r}
+atmo2$saison <- ifelse(atmo2$mois %in% c(12, 1, 2), "Hiver", "Reste de l'année")
+
+ind_hiver <- which(atmo2$saison == "Hiver")
+
+fviz_pca_ind(res.pca.jour, 
+             geom = "point", 
+             pointshape = 16, 
+             alpha.ind = 0.6,
+             select.ind = list(name = rownames(atmo2)[ind_hiver]),
+             col.ind = atmo2$type_jour,
+             palette = c("#00AFBB", "#FC4E07"), 
+             addEllipses = TRUE, 
+             legend.title = "Jour (Hiver)", 
+             title = "Hiver : Semaine vs Week-end")
+```
+
+> **Interprétation :** 
+
+Notre but ici était de mettre en évidence l'impact du chauffage (plus important le week-end en hiver) sur les polluants *NO*, *NO2* et *PM10*. L'analyse des ellipses révèle bien deux dynamiques opposées. D'une part, l'hiver impose globalement une atmosphère chargée en *NO* et *NO2* (décalage général vers la droite). Cependant, on observe bien une réduction de ces polluants le week-end, illustrée par le décalage de l'ellipse orange vers la gauche, confirmant la baisse du trafic.  
+D'autre part, l'ellipse du week-end se décale également vers le haut sur l'axe 2, celui des particules fines. Cette observation valide l'hypothèse de l'impact domestique : la forte présence des habitants chez eux intensifie le chauffage, générant une pollution aux *PM10* qui compense la baisse du trafic. Ainsi, le week-end en hiver ne rime pas avec un air plus pur, mais avec une pollution différente : moins de *NO*/*NO2* (trafic), mais plus de *PM10* (chauffage).
+
+> **Question :**
+
+L'analyse précédente sur les moyennes journalières a montré les limites d'une vision sur 24 heures : les effets du trafic sont souvent "noyés" ou compensés par d'autres sources de pollution (comme le chauffage). On souhaite alors voir si l'impact aux horraires de pointes est plus marquant que le reste.
+
+### 2.3 - Projection sur l'ACP (Week-end + Horraires)
+
+> **Identification :**
+
+Ici, on découpe les horraires en plusieurs section, on identifie des plages horraires plus propices aux déplacements. Ces plages sont alors de *7h -> 9h* et *16h -> 18h*, qui souligne alors les déplacements au travail le matin, et le soir.
+
+```{r}
+atmo_pointe <- atmo %>%
+  filter(heure %in% c(7, 8, 9, 16, 17, 18)) %>%
+  mutate(
+    date = as.Date(date_debut),
+    type_jour = ifelse(wday(date, week_start = 1) >= 6, "Week-end", "Semaine")
+  )
+
+vars_pointe <- atmo_pointe %>%
+  dplyr::select(where(is.numeric), -c(heure, heure2))
+
+res.pca.pointe <- PCA(vars_pointe, scale.unit = TRUE, graph = FALSE)
+
+fviz_pca_ind(res.pca.pointe, 
+             geom = "point", 
+             pointshape = 16, 
+             alpha.ind = 0.6, 
+             col.ind = atmo_pointe$type_jour,
+             palette = c("#00AFBB", "#FC4E07"), 
+             addEllipses = TRUE,
+             legend.title = "Type de jour",
+             title = "Impact du Week-end sur les Heures de Pointe")
+```
+
+> **Interprétation :**
+
+Ici encore, les résultats sont concluants. En semaine, l'atmosphère est marquée par une forte variance, illustrée par une ellipse très étirée vers la droite. Cette forme témoigne de l'instabilité des conditions, oscillant entre des pics extrêmes de *NO* et *NO2* (points à l'extrême droite liés à un trafic intense) et des situations différentes, potentiellement liées aux jours fériés ou de présence à domicile (points hauts sur l'axe 2).
+
+À l'inverse, le week-end agit comme un régulateur. L'ellipse se rétracte et se décale nettement vers la gauche. L'analyse des barycentres confirme cette opposition : celui du week-end se situe du côté négatif de l'axe 1 (et positif sur l'axe 2), contrairement à celui de la semaine. Cela prouve qu'à heure égale, la suppression des trajets suffit à éliminer les pointes de pollution *NO* et *NO2*. Si la pollution de fond (axe 2, liée à la météo ou aux particules) persiste le week-end, la baisse drastique de la variance sur l'axe horizontal confirme que la saturation de l'air est bien une conséquence directe de l'activité humaine de la semaine.
+
+> **Question :**
+
+Pour valider alors ces constats, nous allons réunir l'ensemble des paramètres (Hiver + Heures de Pointe) dans une dernière analyse. Il s'agit alors de tirer une conclusion claire : vérifier si l'impact bénéfique du week-end reste bien même lorsque toutes les conditions sont réunies pour maximiser la pollution.
+
+
+### 2.4 - Projection sur l'ACP (Week-end + Horraires + Hiver)
+
+```{r}
+ind_hiver <- which(atmo_pointe$mois %in% c(12, 1, 2))
+
+fviz_pca_ind(res.pca.pointe, 
+             geom = "point", 
+             pointshape = 16, 
+             alpha.ind = 0.6, 
+             select.ind = list(name = rownames(atmo_pointe)[ind_hiver]),
+             col.ind = atmo_pointe$type_jour, 
+             palette = c("#00AFBB", "#FC4E07"),
+             addEllipses = TRUE,
+             legend.title = "Jour (Hiver & Pointe)",
+             title = "Hiver + Heures de Pointe : Semaine vs Week-end")
+```
+
+> **Interprétation :**
+
+Ici, malgré le chevauchement des ellipses, les résultats restent parlants. En semaine, l'atmosphère est toujours marquée par une forte variance, illustrée par une ellipse très étirée vers la droite. Cette forme témoigne de l'instabilité des conditions : on observe des pics extrêmes de *NO* et *NO2* (points tout à droite) que seule l'accumulation du trafic en hiver peut provoquer.
+
+À l'inverse, le week-end agit comme un régulateur sur ces pics. L'ellipse se rétracte nettement sur sa partie droite : les points extrêmes disparaissent. Le barycentre confirme cette tendance en étant décalé vers la gauche par rapport à la semaine, prouvant que la suppression des trajets suffit à éliminer les "pointes" de pollution. Par contre, l'ellipse reste aussi haute que celle de la semaine sur l'axe 2. Cela confirme que si le week-end règle le problème du trafic (axe 1), il ne change rien à la pollution de fond liée au chauffage (axe 2), qui reste importante en hiver.
+
+### 2.5 - Conclusion générale
+
+Cette étude nous a permis de comprendre précisément comment nos activités impactent l'air. En effet, sur nos premiers graphiques (boxplots), on a clairement vu que le week-end, les polluants liés au trafic (*NO* et *NO2*) chutent, alors que l'*O3*, lui, reste stable.  
+En allant plus loin avec les analyses détaillées (ACP sur les heures de pointe et l'hiver), on a confirmé ce constat : c'est bien le trafic routier qui est responsable des "pics" de pollution. En semaine, l'air est instable et peut atteindre des niveaux critiques à cause des voitures. Le week-end, ces pics disparaissent grâce à l'arrêt des trajets travail-maison.  
+Cependant, le week-end n'est pas parfait. On a vu que si on gagne sur la pollution automobile, on ne gagne pas sur le reste : le chauffage (vu qu'on est chez nous) maintient un niveau élevé de *PM10*, et l'*O3* ne baisse pas. 
+
+En résumé, l'humain a bien un impact direct : c'est la voiture qui favorise la pollution aux *NO* et *NO2*. Le week-end prouve que réduire le trafic est très efficace pour éviter les pics de pollution, même si ça ne règle pas tout, car les mois les plus froid favorise la pollution aux particules fines à cause du chauffage. Alors, la semaine comme le week-en, l'humain à un effet néfaste sur la pollution de l'air à Périgueux.
