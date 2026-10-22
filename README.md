@@ -1,6 +1,6 @@
 # Air Quality in Périgueux: Principal Component Analysis
 
-Multivariate analysis of one year of hourly air pollution and weather data in Périgueux, France (November 2023 – October 2024). Course project (Master IREF, University of Bordeaux, 2025), with Dorian Fernandez.
+Multivariate analysis of one year of hourly air pollution and weather data in Périgueux (Météo-France), France (November 2023 – October 2024). Course project (Master IREF, University of Bordeaux, 2025), with Dorian Fernandez.
 
 ![PCA correlation circle on daily averages](figures/pca_correlation_circle.png)
 
