@@ -11,7 +11,6 @@ output:
     number_sections: false
     theme: flatly
     highlight: tango
-    css: styles.css
 ---
 
 <style>
@@ -121,7 +120,7 @@ library(naniar)
 Premièrement, on commence par charger le jeu de données et préparer les variables temporelles nécessaires aux analyses (format date, mois, et centrage de l'heure sur 14h).
 
 ```{r}
-df <- load("ATMO-RDSM2.rda")
+df <- load("data/ATMO-RDSM2.rda")
 atmo$date <- as.Date(atmo$date_debut)
 atmo$mois <- as.factor(month(atmo$date))
 atmo$heure2 <- abs(atmo$heure - 14)
